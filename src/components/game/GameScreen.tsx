@@ -1,13 +1,14 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useGame } from '@/hooks/useGame'
 import { GameBoard } from './GameBoard'
 import { HUD } from './HUD'
 import { PowerUps } from './PowerUps'
 import { GameOverlay } from './GameOverlay'
 import { POWER_UPS, GRID_ROWS, GRID_COLS } from '@/lib/constants'
-import { PowerUp, Position } from '@/lib/types'
+import { PowerUp, Position, PieceType } from '@/lib/types'
 
 // ─── Taille de cellule ────────────────────────────────────────────────────────
 // Le cadre irrégulier est dessiné sur canvas, qui déborde de ~15px de chaque côté.
@@ -51,32 +52,47 @@ const ROOM_BG = `
 
 // ─── Écran principal ──────────────────────────────────────────────────────────
 
+interface PUEffect { type: PowerUp['type']; pos: Position; id: number }
+
+const PU_GLOW: Record<PowerUp['type'], string> = {
+  hammer: '#F59E0B',
+  arrow:  '#38BDF8',
+  bomb:   '#EF4444',
+  joker:  '#E879F9',
+}
+
 export function GameScreen() {
-  const { state, selectCell, swapDirect, useHammer, restart } = useGame()
+  const { state, selectCell, swapDirect, useHammer, useArrow, useBomb, useJoker, restart } = useGame()
   const cellSize = useCellSize()
 
   const [powerUps, setPowerUps] = useState<PowerUp[]>(POWER_UPS)
-  const [activeHammer, setActiveHammer] = useState(false)
+  const [activePU, setActivePU] = useState<PowerUp['type'] | null>(null)
+  const [puEffect, setPuEffect] = useState<PUEffect | null>(null)
+  const effectIdRef             = useRef(0)
+
+  const consumePU = useCallback((type: PowerUp['type'], pos: Position) => {
+    setActivePU(null)
+    setPuEffect({ type, pos, id: ++effectIdRef.current })
+    setPowerUps(prev => prev.map(pu =>
+      pu.type === type ? { ...pu, count: Math.max(0, pu.count - 1) } : pu
+    ))
+  }, [])
 
   const handleTap = useCallback((pos: Position) => {
-    if (activeHammer) {
-      useHammer(pos)
-      setActiveHammer(false)
-      setPowerUps(prev => prev.map(pu =>
-        pu.type === 'hammer' ? { ...pu, count: Math.max(0, pu.count - 1) } : pu
-      ))
-      return
-    }
+    if (activePU === 'hammer') { useHammer(pos); consumePU('hammer', pos); return }
+    if (activePU === 'arrow')  { useArrow(pos);  consumePU('arrow',  pos); return }
+    if (activePU === 'bomb')   { useBomb(pos);   consumePU('bomb',   pos); return }
+    if (activePU === 'joker')  { useJoker(pos);  consumePU('joker',  pos); return }
     selectCell(pos)
-  }, [activeHammer, selectCell, useHammer])
+  }, [activePU, selectCell, useHammer, useArrow, useBomb, useJoker, consumePU])
 
   const handleSwipe = useCallback((from: Position, to: Position) => {
-    if (activeHammer) return
+    if (activePU) return
     swapDirect(from, to)
-  }, [activeHammer, swapDirect])
+  }, [activePU, swapDirect])
 
   const handlePowerUp = useCallback((type: PowerUp['type']) => {
-    if (type === 'hammer') setActiveHammer(prev => !prev)
+    setActivePU(prev => prev === type ? null : type)
   }, [])
 
   return (
@@ -148,22 +164,43 @@ export function GameScreen() {
             onTap={handleTap}
             onSwipe={handleSwipe}
             cellSize={cellSize}
+            activePU={activePU}
+            puEffect={puEffect}
+            onEffectDone={() => setPuEffect(null)}
           />
 
           <GameOverlay phase={state.phase} score={state.score} onRestart={restart} />
 
-          {activeHammer && (
-            <div style={{
-              position: 'absolute', top: -38, left: '50%',
-              transform: 'translateX(-50%)',
-              background: 'rgba(0,0,0,0.72)',
-              color: '#FDE68A', fontSize: 11, fontWeight: 700,
-              padding: '4px 14px', borderRadius: 999,
-              whiteSpace: 'nowrap', zIndex: 30,
-            }}>
-              Touche une pièce à détruire
-            </div>
-          )}
+          {/* Icône flottante quand un power-up est sélectionné */}
+          <AnimatePresence>
+            {activePU && (() => {
+              const pu = powerUps.find(p => p.type === activePU)
+              const glowColor = PU_GLOW[activePU]
+              return (
+                <motion.div
+                  key={activePU}
+                  initial={{ opacity: 0, scale: 0.4, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: [0, -12, 0] }}
+                  exit={{ opacity: 0, scale: 0.3, y: -20 }}
+                  transition={{
+                    opacity: { duration: 0.2 },
+                    scale: { duration: 0.25, ease: 'backOut' },
+                    y: { duration: 0.9, repeat: Infinity, ease: 'easeInOut', delay: 0.25 },
+                  }}
+                  style={{
+                    position: 'absolute', top: -56, left: '50%',
+                    transform: 'translateX(-50%)',
+                    fontSize: 36, lineHeight: 1,
+                    filter: `drop-shadow(0 0 10px ${glowColor}) drop-shadow(0 0 22px ${glowColor}88)`,
+                    pointerEvents: 'none', zIndex: 40,
+                    userSelect: 'none',
+                  }}
+                >
+                  {pu?.icon ?? '✨'}
+                </motion.div>
+              )
+            })()}
+          </AnimatePresence>
         </div>
       </div>
 
@@ -172,6 +209,7 @@ export function GameScreen() {
         <PowerUps
           powerUps={powerUps}
           onUse={handlePowerUp}
+          activePU={activePU}
           disabled={state.phase !== 'idle'}
         />
       </div>

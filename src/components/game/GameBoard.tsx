@@ -7,6 +7,10 @@ import { GRID_ROWS, GRID_COLS, GRID_MASK } from '@/lib/constants'
 import { isValidCell } from '@/lib/gameEngine'
 import { PieceCell } from './Piece'
 import { ObstacleTile } from './ObstacleTile'
+import { PowerUpEffect } from './PowerUpEffect'
+import { PowerUp } from '@/lib/types'
+
+interface PUEffect { type: PowerUp['type']; pos: Position; id: number }
 
 interface Props {
   grid: Grid
@@ -16,6 +20,16 @@ interface Props {
   onTap: (pos: Position) => void
   onSwipe: (from: Position, to: Position) => void
   cellSize: number
+  activePU?: PowerUp['type'] | null
+  puEffect?: PUEffect | null
+  onEffectDone?: () => void
+}
+
+const PU_GLOW: Record<PowerUp['type'], string> = {
+  hammer: '#F59E0B',
+  arrow:  '#38BDF8',
+  bomb:   '#EF4444',
+  joker:  '#E879F9',
 }
 
 const FRAME_W    = 8                                 // épaisseur du cadre doré
@@ -186,7 +200,7 @@ function drawFrame(
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function GameBoard({ grid, obstacles, selected, matchedIds, onTap, onSwipe, cellSize }: Props) {
+export function GameBoard({ grid, obstacles, selected, matchedIds, onTap, onSwipe, cellSize, activePU, puEffect, onEffectDone }: Props) {
   const boardRef  = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const dragStart = useRef<{ x: number; y: number; row: number; col: number } | null>(null)
@@ -355,6 +369,39 @@ export function GameBoard({ grid, obstacles, selected, matchedIds, onTap, onSwip
             <ObstacleTile obstacle={obs} cellSize={cellSize} />
           </motion.div>
         ))}
+      </AnimatePresence>
+
+      {/* ── Glow de ciblage (power-up actif) ── */}
+      {activePU && (
+        <motion.div
+          key={activePU}
+          animate={{ opacity: [0.5, 1, 0.5] }}
+          transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}
+          style={{
+            position: 'absolute',
+            inset: -CANVAS_PAD,
+            borderRadius: 16,
+            boxShadow: `0 0 0 3px ${PU_GLOW[activePU]}, 0 0 28px 10px ${PU_GLOW[activePU]}77`,
+            pointerEvents: 'none',
+            zIndex: 40,
+          }}
+        />
+      )}
+
+      {/* ── Animation post-effect ── */}
+      <AnimatePresence>
+        {puEffect && (
+          <PowerUpEffect
+            key={puEffect.id}
+            type={puEffect.type}
+            pos={puEffect.pos}
+            step={step}
+            cellSize={cellSize}
+            boardW={W}
+            boardH={H}
+            onDone={onEffectDone ?? (() => {})}
+          />
+        )}
       </AnimatePresence>
     </div>
   )

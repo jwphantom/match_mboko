@@ -249,3 +249,66 @@ export function removePieceAt(
   }
   return { newGrid, removed }
 }
+
+// ─── Power-ups ────────────────────────────────────────────────────────────────
+
+/** Flèche : efface toute la ligne */
+export function clearRow(
+  grid: Grid, row: number
+): { newGrid: Grid; removed: Record<string, number>; positions: Position[] } {
+  const newGrid = grid.map(r => [...r])
+  const removed: Record<string, number> = {}
+  const positions: Position[] = []
+  for (let c = 0; c < GRID_COLS; c++) {
+    if (!isValidCell(row, c)) continue
+    const cell = newGrid[row][c]
+    if (cell) {
+      removed[(cell as Piece).type] = (removed[(cell as Piece).type] ?? 0) + 1
+      positions.push({ row, col: c })
+      newGrid[row][c] = null
+    }
+  }
+  return { newGrid, removed, positions }
+}
+
+/** Bombe : efface un carré radius×radius autour de la cellule */
+export function clearArea(
+  grid: Grid, row: number, col: number, radius = 1
+): { newGrid: Grid; removed: Record<string, number>; positions: Position[] } {
+  const newGrid = grid.map(r => [...r])
+  const removed: Record<string, number> = {}
+  const positions: Position[] = []
+  for (let r = row - radius; r <= row + radius; r++) {
+    for (let c = col - radius; c <= col + radius; c++) {
+      if (!isValidCell(r, c)) continue
+      const cell = newGrid[r][c]
+      if (cell) {
+        removed[(cell as Piece).type] = (removed[(cell as Piece).type] ?? 0) + 1
+        positions.push({ row: r, col: c })
+        newGrid[r][c] = null
+      }
+    }
+  }
+  return { newGrid, removed, positions }
+}
+
+/** Joker : efface toutes les pièces du même type que la cellule cible */
+export function clearAllOfType(
+  grid: Grid, pieceType: PieceType
+): { newGrid: Grid; removed: Record<string, number>; positions: Position[] } {
+  const newGrid = grid.map(r => [...r])
+  const removed: Record<string, number> = {}
+  const positions: Position[] = []
+  for (let r = 0; r < GRID_ROWS; r++) {
+    for (let c = 0; c < GRID_COLS; c++) {
+      if (!isValidCell(r, c)) continue
+      const cell = newGrid[r][c]
+      if (cell && (cell as Piece).type === pieceType) {
+        removed[(cell as Piece).type] = (removed[(cell as Piece).type] ?? 0) + 1
+        positions.push({ row: r, col: c })
+        newGrid[r][c] = null
+      }
+    }
+  }
+  return { newGrid, removed, positions }
+}

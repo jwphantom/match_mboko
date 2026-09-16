@@ -6,6 +6,7 @@ import { PowerUp } from '@/lib/types'
 interface Props {
   powerUps: PowerUp[]
   onUse: (type: PowerUp['type']) => void
+  activePU?: PowerUp['type'] | null
   disabled?: boolean
   onSettings?: () => void
 }
@@ -17,12 +18,13 @@ const BTN_COLORS: Record<string, { from: string; to: string; shadow: string }> =
   joker:  { from: '#4CAF50', to: '#2E7D32', shadow: '#1B5E20' },
 }
 
-export function PowerUps({ powerUps, onUse, disabled, onSettings }: Props) {
+export function PowerUps({ powerUps, onUse, activePU, disabled, onSettings }: Props) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
       {powerUps.map(pu => {
         const c = BTN_COLORS[pu.type]
         const off = disabled || pu.count === 0
+        const isActive = activePU === pu.type
 
         return (
           <motion.button
@@ -37,14 +39,18 @@ export function PowerUps({ powerUps, onUse, disabled, onSettings }: Props) {
               width: 54, height: 54,
               borderRadius: '50%',
               background: `radial-gradient(circle at 38% 32%, ${c.from}, ${c.to})`,
-              boxShadow: off
+              boxShadow: isActive
+                ? `0 0 0 3px #fff, 0 0 12px 4px ${c.from}, 0 3px 0 ${c.shadow}`
+                : off
                 ? `0 3px 0 ${c.shadow}`
                 : `0 5px 0 ${c.shadow}, inset 0 1px 0 rgba(255,255,255,0.28)`,
-              border: '2px solid rgba(255,255,255,0.18)',
+              border: isActive ? '2px solid #fff' : '2px solid rgba(255,255,255,0.18)',
               cursor: off ? 'not-allowed' : 'pointer',
               opacity: off ? 0.55 : 1,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 22,
+              transform: isActive ? 'scale(1.1)' : undefined,
+              transition: 'transform 0.15s, box-shadow 0.15s',
             }}
           >
             {/* Reflet */}

@@ -8,7 +8,9 @@ import {
   areAdjacent, updateTargets, checkWin, calcScore,
   isValidCell, removePieceAt,
   getMatchedPositions, hitAdjacentObstacles,
+  clearRow, clearArea, clearAllOfType,
 } from '@/lib/gameEngine'
+import { Piece } from '@/lib/types'
 import { INITIAL_MOVES, INITIAL_TARGETS } from '@/lib/constants'
 
 // ─── État interne ─────────────────────────────────────────────────────────────
@@ -43,6 +45,9 @@ type Action =
   | { type: 'REFILL' }
   | { type: 'CASCADE_CHECK' }
   | { type: 'HAMMER'; pos: Position }
+  | { type: 'ARROW';  pos: Position }
+  | { type: 'BOMB';   pos: Position }
+  | { type: 'JOKER';  pos: Position }
   | { type: 'RESTART' }
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -171,6 +176,57 @@ function reducer(state: State, action: Action): State {
       }
     }
 
+    case 'ARROW': {
+      if (state.phase !== 'idle') return state
+      const { newGrid, removed, positions } = clearRow(state.grid, action.pos.row)
+      const { newObstacles, clearedByKind } = hitAdjacentObstacles(state.obstacles, positions)
+      const newTargets = updateTargets(state.targets, { ...removed, ...clearedByKind })
+      const fallen = applyGravity(newGrid)
+      const filled = refillGrid(fallen)
+      const score = state.score + calcScore(Object.values(removed).reduce((a,b)=>a+b,0), 0)
+      const won = checkWin(newTargets)
+      return {
+        ...state, grid: filled, obstacles: newObstacles, targets: newTargets,
+        score, matchedIds: new Set(), movesLeft: state.movesLeft - 1,
+        phase: won ? 'win' : state.movesLeft - 1 <= 0 ? 'lose' : 'idle',
+      }
+    }
+
+    case 'BOMB': {
+      if (state.phase !== 'idle') return state
+      const { newGrid, removed, positions } = clearArea(state.grid, action.pos.row, action.pos.col, 1)
+      const { newObstacles, clearedByKind } = hitAdjacentObstacles(state.obstacles, positions)
+      const newTargets = updateTargets(state.targets, { ...removed, ...clearedByKind })
+      const fallen = applyGravity(newGrid)
+      const filled = refillGrid(fallen)
+      const score = state.score + calcScore(Object.values(removed).reduce((a,b)=>a+b,0), 0)
+      const won = checkWin(newTargets)
+      return {
+        ...state, grid: filled, obstacles: newObstacles, targets: newTargets,
+        score, matchedIds: new Set(), movesLeft: state.movesLeft - 1,
+        phase: won ? 'win' : state.movesLeft - 1 <= 0 ? 'lose' : 'idle',
+      }
+    }
+
+    case 'JOKER': {
+      if (state.phase !== 'idle') return state
+      const cell = state.grid[action.pos.row][action.pos.col]
+      if (!cell) return state
+      const pieceType = (cell as Piece).type
+      const { newGrid, removed, positions } = clearAllOfType(state.grid, pieceType)
+      const { newObstacles, clearedByKind } = hitAdjacentObstacles(state.obstacles, positions)
+      const newTargets = updateTargets(state.targets, { ...removed, ...clearedByKind })
+      const fallen = applyGravity(newGrid)
+      const filled = refillGrid(fallen)
+      const score = state.score + calcScore(Object.values(removed).reduce((a,b)=>a+b,0), 0)
+      const won = checkWin(newTargets)
+      return {
+        ...state, grid: filled, obstacles: newObstacles, targets: newTargets,
+        score, matchedIds: new Set(), movesLeft: state.movesLeft - 1,
+        phase: won ? 'win' : state.movesLeft - 1 <= 0 ? 'lose' : 'idle',
+      }
+    }
+
     case 'RESTART':
       return makeInitialState()
 
@@ -238,7 +294,19 @@ export function useGame() {
     dispatch({ type: 'HAMMER', pos })
   }, [])
 
+  const useArrow = useCallback((pos: Position) => {
+    dispatch({ type: 'ARROW', pos })
+  }, [])
+
+  const useBomb = useCallback((pos: Position) => {
+    dispatch({ type: 'BOMB', pos })
+  }, [])
+
+  const useJoker = useCallback((pos: Position) => {
+    dispatch({ type: 'JOKER', pos })
+  }, [])
+
   const restart = useCallback(() => dispatch({ type: 'RESTART' }), [])
 
-  return { state, selectCell, swapDirect, useHammer, restart }
+  return { state, selectCell, swapDirect, useHammer, useArrow, useBomb, useJoker, restart }
 }
