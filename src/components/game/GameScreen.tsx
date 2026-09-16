@@ -10,11 +10,11 @@ import { POWER_UPS, GRID_ROWS, GRID_COLS } from '@/lib/constants'
 import { PowerUp, Position } from '@/lib/types'
 
 // ─── Taille de cellule ────────────────────────────────────────────────────────
-// Tient compte de tous les paddings pour ne jamais déborder :
-//   horizontal : 16×2 (screen) + 14×2 (frame border) + 8×2 (board gap) = 76 px
-//   vertical   : HUD ~95px + PowerUps ~80px + marges ~80px              = 255 px
+// Le cadre irrégulier est dessiné sur canvas, qui déborde de ~15px de chaque côté.
+//   horizontal : 16×2 (screen) + 15×2 (canvas overhang) = 62 px
+//   vertical   : HUD ~95px + PowerUps ~80px + marges ~80px = 255 px
 
-const H_PAD = 76
+const H_PAD = 62
 const V_PAD = 255
 const GAP_R = 0.065
 
@@ -34,68 +34,6 @@ function useCellSize(): number {
     return () => window.removeEventListener('resize', compute)
   }, [])
   return size
-}
-
-// ─── Cadre doré avec rivets ───────────────────────────────────────────────────
-
-function GoldenFrame({ children, cellSize }: { children: React.ReactNode; cellSize: number }) {
-  const gap   = Math.max(3, Math.round(cellSize * 0.065))
-  const step  = cellSize + gap
-  const bW    = GRID_COLS * step - gap
-  const bH    = GRID_ROWS * step - gap
-  const PAD   = 14  // épaisseur du cadre doré
-
-  // Positions des rivets le long du cadre
-  const rivets: Array<{ x: number; y: number }> = []
-  const totalW = bW + PAD * 2, totalH = bH + PAD * 2
-  const SPACING = 28
-  // Haut & bas
-  for (let x = SPACING; x < totalW - SPACING / 2; x += SPACING) {
-    rivets.push({ x, y: PAD / 2 - 1 })
-    rivets.push({ x, y: totalH - PAD / 2 + 1 })
-  }
-  // Gauche & droite
-  for (let y = SPACING; y < totalH - SPACING / 2; y += SPACING) {
-    rivets.push({ x: PAD / 2 - 1, y })
-    rivets.push({ x: totalW - PAD / 2 + 1, y })
-  }
-
-  return (
-    <div
-      style={{
-        position: 'relative',
-        padding: PAD,
-        borderRadius: 20,
-        background: 'linear-gradient(145deg, #F5D060, #C8860A 40%, #F5D060 70%, #A86800)',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.55), inset 0 2px 0 rgba(255,255,255,0.4), inset 0 -2px 0 rgba(0,0,0,0.25)',
-        border: '3px solid #78350F',
-      }}
-    >
-      {/* Bordure intérieure sombre */}
-      <div style={{
-        position: 'absolute',
-        inset: PAD - 4, borderRadius: 10,
-        border: '3px solid rgba(120,53,15,0.55)',
-        boxShadow: 'inset 0 4px 8px rgba(0,0,0,0.45)',
-        pointerEvents: 'none', zIndex: 1,
-      }} />
-
-      {/* Rivets */}
-      {rivets.map((r, i) => (
-        <div key={i} style={{
-          position: 'absolute',
-          left: r.x - 5, top: r.y - 5,
-          width: 10, height: 10,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle at 35% 30%, #FEF3C7, #B45309)',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
-          zIndex: 2,
-        }} />
-      ))}
-
-      {children}
-    </div>
-  )
 }
 
 // ─── Fond de salle ────────────────────────────────────────────────────────────
@@ -199,20 +137,18 @@ export function GameScreen() {
         <HUD targets={state.targets} movesLeft={state.movesLeft} score={state.score} />
       </div>
 
-      {/* Plateau + cadre */}
+      {/* Plateau — le cadre irrégulier est dessiné dans GameBoard via canvas */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', zIndex: 10, position: 'relative' }}>
-        <div style={{ position: 'relative' }}>
-          <GoldenFrame cellSize={cellSize}>
-            <GameBoard
-              grid={state.grid}
-              obstacles={state.obstacles}
-              selected={state.selected}
-              matchedIds={state.matchedIds}
-              onTap={handleTap}
-              onSwipe={handleSwipe}
-              cellSize={cellSize}
-            />
-          </GoldenFrame>
+        <div style={{ position: 'relative', overflow: 'visible' }}>
+          <GameBoard
+            grid={state.grid}
+            obstacles={state.obstacles}
+            selected={state.selected}
+            matchedIds={state.matchedIds}
+            onTap={handleTap}
+            onSwipe={handleSwipe}
+            cellSize={cellSize}
+          />
 
           <GameOverlay phase={state.phase} score={state.score} onRestart={restart} />
 
