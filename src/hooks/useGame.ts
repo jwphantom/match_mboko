@@ -1,20 +1,13 @@
 'use client'
 
 import { useReducer, useCallback, useEffect } from 'react'
-import { Grid, GameState, Position, GamePhase } from '@/lib/types'
+import { GameState, Position, ObstacleGrid } from '@/lib/types'
 import {
-  initGrid,
-  findMatches,
-  removeMatches,
-  applyGravity,
-  refillGrid,
-  swapPieces,
-  areAdjacent,
-  updateTargets,
-  checkWin,
-  calcScore,
-  isValidCell,
-  removePieceAt,
+  initGrid, initObstacleGrid,
+  findMatches, removeMatches, applyGravity, refillGrid, swapPieces,
+  areAdjacent, updateTargets, checkWin, calcScore,
+  isValidCell, removePieceAt,
+  getMatchedPositions, hitAdjacentObstacles,
 } from '@/lib/gameEngine'
 import { INITIAL_MOVES, INITIAL_TARGETS } from '@/lib/constants'
 
@@ -27,6 +20,7 @@ interface State extends GameState {
 function makeInitialState(): State {
   return {
     grid: initGrid(),
+    obstacles: initObstacleGrid(),
     movesLeft: INITIAL_MOVES,
     targets: INITIAL_TARGETS.map(t => ({ ...t })),
     score: 0,
@@ -45,7 +39,7 @@ type Action =
   | { type: 'ATTEMPT_SWAP'; a: Position; b: Position }
   | { type: 'CHECK_SWAP' }
   | { type: 'FINISH_REVERT' }
-  | { type: 'APPLY_GRAVITY' }   // supprime matchedIds PUIS applique gravité
+  | { type: 'APPLY_GRAVITY' }
   | { type: 'REFILL' }
   | { type: 'CASCADE_CHECK' }
   | { type: 'HAMMER'; pos: Position }
@@ -60,23 +54,19 @@ function reducer(state: State, action: Action): State {
       if (state.phase !== 'idle') return state
       const { pos } = action
       if (!state.selected) return { ...state, selected: pos }
-      if (state.selected.row === pos.row && state.selected.col === pos.col) {
+      if (state.selected.row === pos.row && state.selected.col === pos.col)
         return { ...state, selected: null }
-      }
       return { ...state, selected: pos }
     }
 
     case 'ATTEMPT_SWAP': {
       if (state.phase !== 'idle') return state
-      const { a, b } = action
-      // Applique visuellement le swap → Framer Motion layout anime le déplacement
-      const swapped = swapPieces(state.grid, a, b)
       return {
         ...state,
-        grid: swapped,
+        grid: swapPieces(state.grid, action.a, action.b),
         selected: null,
         phase: 'swapping',
-        pendingSwap: { a, b },
+        pendingSwap: { a: action.a, b: action.b },
         matchedIds: new Set(),
         combo: 0,
       }
@@ -88,20 +78,19 @@ function reducer(state: State, action: Action): State {
       const matched = findMatches(state.grid)
 
       if (matched.size === 0) {
-        // Aucun match → on remet visuellement les pièces à leur place
-        const reverted = swapPieces(state.grid, a, b)
-        return { ...state, grid: reverted, phase: 'reverting' }
+        return { ...state, grid: swapPieces(state.grid, a, b), phase: 'reverting' }
       }
 
-      // Les pièces matchées RESTENT dans le grid pendant 'matching'
-      // → l'animation de disparition peut se jouer avant suppression réelle
-      const { removed } = removeMatches(state.grid, matched) // seulement pour compter
-      const newTargets = updateTargets(state.targets, removed)
+      // Compter ce qui sera détruit (pour les objectifs) sans modifier le grid encore
+      const { removed: removedPieces } = removeMatches(state.grid, matched)
+      const matchedPositions = getMatchedPositions(state.grid, matched)
+      const { clearedByKind } = hitAdjacentObstacles(state.obstacles, matchedPositions)
+      const allRemoved = { ...removedPieces, ...clearedByKind }
+      const newTargets = updateTargets(state.targets, allRemoved)
       const score = state.score + calcScore(matched.size, 1)
 
       return {
         ...state,
-        // grid inchangé : les pièces matchées sont encore visibles
         movesLeft: state.movesLeft - 1,
         targets: newTargets,
         score,
@@ -116,12 +105,14 @@ function reducer(state: State, action: Action): State {
       return { ...state, phase: 'idle', pendingSwap: null, combo: 0 }
 
     case 'APPLY_GRAVITY': {
-      // On supprime maintenant les pièces matchées (l'animation a eu le temps de jouer)
+      // Supprimer pièces matchées + frapper obstacles + gravité
+      const matchedPositions = getMatchedPositions(state.grid, state.matchedIds)
       const { newGrid } = removeMatches(state.grid, state.matchedIds)
-      const fallen = applyGravity(newGrid)
+      const { newObstacles } = hitAdjacentObstacles(state.obstacles, matchedPositions)
       return {
         ...state,
-        grid: fallen,
+        grid: applyGravity(newGrid),
+        obstacles: newObstacles,
         phase: 'falling',
         matchedIds: new Set(),
       }
@@ -136,18 +127,15 @@ function reducer(state: State, action: Action): State {
       if (matched.size === 0) {
         const won = checkWin(state.targets)
         const lost = !won && state.movesLeft <= 0
-        return {
-          ...state,
-          phase: won ? 'win' : lost ? 'lose' : 'idle',
-          matchedIds: new Set(),
-          combo: 0,
-        }
+        return { ...state, phase: won ? 'win' : lost ? 'lose' : 'idle', matchedIds: new Set(), combo: 0 }
       }
 
-      // Même pattern que CHECK_SWAP : garder pièces visibles, juste compter
-      const { removed } = removeMatches(state.grid, matched)
-      const newTargets = updateTargets(state.targets, removed)
+      const { removed: removedPieces } = removeMatches(state.grid, matched)
+      const matchedPositions = getMatchedPositions(state.grid, matched)
+      const { clearedByKind } = hitAdjacentObstacles(state.obstacles, matchedPositions)
+      const allRemoved = { ...removedPieces, ...clearedByKind }
       const nextCombo = state.combo + 1
+      const newTargets = updateTargets(state.targets, allRemoved)
       const score = state.score + calcScore(matched.size, nextCombo)
 
       return {
@@ -163,7 +151,11 @@ function reducer(state: State, action: Action): State {
     case 'HAMMER': {
       if (state.phase !== 'idle') return state
       const { newGrid, removed } = removePieceAt(state.grid, action.pos)
-      const newTargets = updateTargets(state.targets, removed)
+      const { newObstacles, clearedByKind } = hitAdjacentObstacles(
+        state.obstacles, [action.pos]
+      )
+      const allRemoved = { ...removed, ...clearedByKind }
+      const newTargets = updateTargets(state.targets, allRemoved)
       const fallen = applyGravity(newGrid)
       const filled = refillGrid(fallen)
       const score = state.score + calcScore(1, 0)
@@ -171,6 +163,7 @@ function reducer(state: State, action: Action): State {
       return {
         ...state,
         grid: filled,
+        obstacles: newObstacles,
         targets: newTargets,
         score,
         matchedIds: new Set(),
@@ -188,11 +181,7 @@ function reducer(state: State, action: Action): State {
 
 // ─── Timings ──────────────────────────────────────────────────────────────────
 
-const T_SWAP    = 320  // durée animation swap Framer Motion
-const T_REVERT  = 320
-const T_MATCH   = 420  // durée de highlight avant suppression
-const T_FALL    = 300
-const T_REFILL  = 220
+const T = { SWAP: 320, REVERT: 320, MATCH: 440, FALL: 300, REFILL: 220 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
@@ -201,31 +190,31 @@ export function useGame() {
 
   useEffect(() => {
     if (state.phase !== 'swapping') return
-    const t = setTimeout(() => dispatch({ type: 'CHECK_SWAP' }), T_SWAP)
+    const t = setTimeout(() => dispatch({ type: 'CHECK_SWAP' }), T.SWAP)
     return () => clearTimeout(t)
   }, [state.phase])
 
   useEffect(() => {
     if (state.phase !== 'reverting') return
-    const t = setTimeout(() => dispatch({ type: 'FINISH_REVERT' }), T_REVERT)
+    const t = setTimeout(() => dispatch({ type: 'FINISH_REVERT' }), T.REVERT)
     return () => clearTimeout(t)
   }, [state.phase])
 
   useEffect(() => {
     if (state.phase !== 'matching') return
-    const t = setTimeout(() => dispatch({ type: 'APPLY_GRAVITY' }), T_MATCH)
+    const t = setTimeout(() => dispatch({ type: 'APPLY_GRAVITY' }), T.MATCH)
     return () => clearTimeout(t)
   }, [state.phase])
 
   useEffect(() => {
     if (state.phase !== 'falling') return
-    const t = setTimeout(() => dispatch({ type: 'REFILL' }), T_FALL)
+    const t = setTimeout(() => dispatch({ type: 'REFILL' }), T.FALL)
     return () => clearTimeout(t)
   }, [state.phase])
 
   useEffect(() => {
     if (state.phase !== 'refilling') return
-    const t = setTimeout(() => dispatch({ type: 'CASCADE_CHECK' }), T_REFILL)
+    const t = setTimeout(() => dispatch({ type: 'CASCADE_CHECK' }), T.REFILL)
     return () => clearTimeout(t)
   }, [state.phase])
 

@@ -2,13 +2,15 @@
 
 import { useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Grid, Position, Piece } from '@/lib/types'
+import { Grid, ObstacleGrid, Position, Piece, Obstacle } from '@/lib/types'
 import { GRID_ROWS, GRID_COLS, GRID_MASK } from '@/lib/constants'
 import { isValidCell } from '@/lib/gameEngine'
 import { PieceCell } from './Piece'
+import { ObstacleTile } from './ObstacleTile'
 
 interface Props {
   grid: Grid
+  obstacles: ObstacleGrid
   selected: Position | null
   matchedIds: Set<string>
   onTap: (pos: Position) => void
@@ -16,18 +18,17 @@ interface Props {
   cellSize: number
 }
 
-export function GameBoard({ grid, selected, matchedIds, onTap, onSwipe, cellSize }: Props) {
+export function GameBoard({ grid, obstacles, selected, matchedIds, onTap, onSwipe, cellSize }: Props) {
   const boardRef = useRef<HTMLDivElement>(null)
   const dragStart = useRef<{ x: number; y: number; row: number; col: number } | null>(null)
 
-  const gap  = Math.max(3, Math.round(cellSize * 0.07))
-  const step = cellSize + gap
-  const boardWidth  = GRID_COLS * step - gap
-  const boardHeight = GRID_ROWS * step - gap
+  const gap   = Math.max(3, Math.round(cellSize * 0.065))
+  const step  = cellSize + gap
+  const W     = GRID_COLS * step - gap
+  const H     = GRID_ROWS * step - gap
+  const R     = Math.round(cellSize * 0.22)   // border-radius des cases
 
-  // ── Toutes les pièces dans une liste plate ─────────────────────────────────
-  // Clé stable = piece.id → React réutilise le même nœud DOM quand une pièce
-  // change de position. Framer Motion `layout` détecte le déplacement et anime.
+  // ── Pièces dans liste plate (key stable = piece.id) ──────────────────────
   const pieces: Array<{ piece: Piece; row: number; col: number }> = []
   for (let r = 0; r < GRID_ROWS; r++) {
     for (let c = 0; c < GRID_COLS; c++) {
@@ -37,7 +38,17 @@ export function GameBoard({ grid, selected, matchedIds, onTap, onSwipe, cellSize
     }
   }
 
-  // ── Pointer events (tap + swipe) ───────────────────────────────────────────
+  // ── Obstacles dans liste plate ────────────────────────────────────────────
+  const obstacleList: Array<{ obs: Obstacle; row: number; col: number }> = []
+  for (let r = 0; r < GRID_ROWS; r++) {
+    for (let c = 0; c < GRID_COLS; c++) {
+      if (!isValidCell(r, c)) continue
+      const obs = obstacles[r]?.[c]
+      if (obs) obstacleList.push({ obs, row: r, col: c })
+    }
+  }
+
+  // ── Pointer events ────────────────────────────────────────────────────────
 
   function cellAt(cx: number, cy: number): Position | null {
     if (!boardRef.current) return null
@@ -59,37 +70,28 @@ export function GameBoard({ grid, selected, matchedIds, onTap, onSwipe, cellSize
     const start = dragStart.current
     dragStart.current = null
     if (!start) return
-
-    const dx = e.clientX - start.x
-    const dy = e.clientY - start.y
-    const dist = Math.hypot(dx, dy)
-
-    if (dist < cellSize * 0.25) {
+    const dx = e.clientX - start.x, dy = e.clientY - start.y
+    if (Math.hypot(dx, dy) < cellSize * 0.25) {
       onTap({ row: start.row, col: start.col })
       return
     }
-
-    // Direction dominante
     let tr = start.row, tc = start.col
     if (Math.abs(dx) >= Math.abs(dy)) tc += dx > 0 ? 1 : -1
     else tr += dy > 0 ? 1 : -1
-
-    if (isValidCell(tr, tc)) {
-      onSwipe({ row: start.row, col: start.col }, { row: tr, col: tc })
-    }
+    if (isValidCell(tr, tc)) onSwipe({ row: start.row, col: start.col }, { row: tr, col: tc })
   }
 
   return (
     <div
       ref={boardRef}
-      style={{ position: 'relative', width: boardWidth, height: boardHeight, touchAction: 'none', cursor: 'pointer' }}
+      style={{ position: 'relative', width: W, height: H, touchAction: 'none', cursor: 'pointer' }}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerCancel={() => { dragStart.current = null }}
       role="grid"
       aria-label="plateau de jeu"
     >
-      {/* ── Fonds de case (toujours visibles) ── */}
+      {/* ── Fonds de case (slots) ── */}
       {Array.from({ length: GRID_ROWS }, (_, r) =>
         Array.from({ length: GRID_COLS }, (_, c) => {
           if (GRID_MASK[r][c] !== 1) return null
@@ -98,63 +100,64 @@ export function GameBoard({ grid, selected, matchedIds, onTap, onSwipe, cellSize
               key={`slot-${r}-${c}`}
               style={{
                 position: 'absolute',
-                left: c * step,
-                top: r * step,
-                width: cellSize,
-                height: cellSize,
-                borderRadius: Math.round(cellSize * 0.25),
-                background: 'rgba(93,64,30,0.28)',
-                boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.35)',
+                left: c * step, top: r * step,
+                width: cellSize, height: cellSize,
+                borderRadius: R,
+                background: 'linear-gradient(145deg, #DBEEFF, #B8D8F8)',
+                boxShadow: 'inset 0 2px 5px rgba(0,0,100,0.18)',
               }}
             />
           )
         })
       )}
 
-      {/* ── Pièces : liste plate avec layout + AnimatePresence ── */}
+      {/* ── Pièces (layout Framer Motion anime le déplacement) ── */}
       <AnimatePresence>
         {pieces.map(({ piece, row, col }) => {
           const isSelected = selected?.row === row && selected?.col === col
           const isMatched  = matchedIds.has(piece.id)
-
           return (
             <motion.div
               key={piece.id}
-              layout                       // anime le déplacement quand left/top changent
-              layoutId={piece.id}          // identité partagée pour les transitions
+              layout
               style={{
                 position: 'absolute',
-                left: col * step,
-                top: row * step,
-                width: cellSize,
-                height: cellSize,
-                zIndex: isSelected ? 10 : isMatched ? 8 : 1,
+                left: col * step, top: row * step,
+                width: cellSize, height: cellSize,
+                zIndex: isSelected ? 10 : isMatched ? 8 : 2,
               }}
               initial={{ scale: 0, opacity: 0 }}
-              animate={{
-                scale: isMatched ? 1.18 : isSelected ? 1.12 : 1,
-                opacity: 1,
-              }}
-              exit={{
-                scale: 0,
-                opacity: 0,
-                transition: { duration: 0.22, ease: 'easeIn' },
-              }}
+              animate={{ scale: isMatched ? 1.2 : isSelected ? 1.1 : 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0, transition: { duration: 0.2 } }}
               transition={{
-                layout: { type: 'spring', stiffness: 420, damping: 30, duration: 0.30 },
-                scale:  { type: 'spring', stiffness: 380, damping: 22 },
-                opacity: { duration: 0.18 },
+                layout:  { type: 'spring', stiffness: 420, damping: 30 },
+                scale:   { type: 'spring', stiffness: 380, damping: 22 },
+                opacity: { duration: 0.15 },
               }}
             >
-              <PieceCell
-                piece={piece}
-                isSelected={isSelected}
-                isMatched={isMatched}
-                cellSize={cellSize}
-              />
+              <PieceCell piece={piece} isSelected={isSelected} isMatched={isMatched} cellSize={cellSize} />
             </motion.div>
           )
         })}
+      </AnimatePresence>
+
+      {/* ── Obstacles (par-dessus les pièces, z-index élevé) ── */}
+      <AnimatePresence>
+        {obstacleList.map(({ obs, row, col }) => (
+          <motion.div
+            key={`obs-${row}-${col}`}
+            style={{
+              position: 'absolute',
+              left: col * step, top: row * step,
+              width: cellSize, height: cellSize,
+              zIndex: 15,
+            }}
+            initial={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 1.4, opacity: 0, transition: { duration: 0.35 } }}
+          >
+            <ObstacleTile obstacle={obs} cellSize={cellSize} />
+          </motion.div>
+        ))}
       </AnimatePresence>
     </div>
   )

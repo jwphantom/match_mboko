@@ -6,8 +6,6 @@ export interface Piece {
 }
 
 export type Cell = Piece | null
-
-// undefined = hors grille, null = case vide in-bounds, Piece = pièce présente
 export type Grid = (Cell | undefined)[][]
 
 export interface Position {
@@ -15,25 +13,42 @@ export interface Position {
   col: number
 }
 
+// ─── Obstacles ────────────────────────────────────────────────────────────────
+
+export type ObstacleKind = 'grass' | 'box'
+
+export interface Obstacle {
+  kind: ObstacleKind
+  hp: number
+  maxHp: number
+}
+
+// Même forme que Grid : undefined = hors grille, null = pas d'obstacle
+export type ObstacleGrid = (Obstacle | null | undefined)[][]
+
+// ─── Objectifs (pièces ET obstacles) ─────────────────────────────────────────
+
 export interface Target {
-  type: PieceType
+  type: string        // PieceType | ObstacleKind
   required: number
   collected: number
 }
 
-// Phases distinctes pour piloter la machine à états côté useEffect
+// ─── État de jeu ─────────────────────────────────────────────────────────────
+
 export type GamePhase =
   | 'idle'
-  | 'swapping'   // animation de swap en cours
-  | 'reverting'  // pas de match, retour arrière
-  | 'matching'   // highlight des pièces matchées
-  | 'falling'    // gravité
-  | 'refilling'  // remplissage
+  | 'swapping'
+  | 'reverting'
+  | 'matching'
+  | 'falling'
+  | 'refilling'
   | 'win'
   | 'lose'
 
 export interface GameState {
   grid: Grid
+  obstacles: ObstacleGrid
   movesLeft: number
   targets: Target[]
   score: number

@@ -7,58 +7,92 @@ interface Props {
   powerUps: PowerUp[]
   onUse: (type: PowerUp['type']) => void
   disabled?: boolean
+  onSettings?: () => void
 }
 
-const COLORS: Record<PowerUp['type'], { bg: string; shadow: string }> = {
-  hammer: { bg: '#B45309', shadow: '#78350F' },
-  arrow:  { bg: '#16A34A', shadow: '#14532D' },
-  bomb:   { bg: '#DC2626', shadow: '#7F1D1D' },
-  joker:  { bg: '#7C3AED', shadow: '#4C1D95' },
+const BTN_COLORS: Record<string, { from: string; to: string; shadow: string }> = {
+  hammer: { from: '#4CAF50', to: '#2E7D32', shadow: '#1B5E20' },
+  arrow:  { from: '#4CAF50', to: '#2E7D32', shadow: '#1B5E20' },
+  bomb:   { from: '#4CAF50', to: '#2E7D32', shadow: '#1B5E20' },
+  joker:  { from: '#4CAF50', to: '#2E7D32', shadow: '#1B5E20' },
 }
 
-export function PowerUps({ powerUps, onUse, disabled }: Props) {
+export function PowerUps({ powerUps, onUse, disabled, onSettings }: Props) {
   return (
-    <div className="flex items-center justify-center gap-3 px-2">
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
       {powerUps.map(pu => {
-        const c = COLORS[pu.type]
-        const unavailable = disabled || pu.count === 0
+        const c = BTN_COLORS[pu.type]
+        const off = disabled || pu.count === 0
 
         return (
           <motion.button
             key={pu.type}
-            whileTap={unavailable ? {} : { scale: 0.88 }}
-            whileHover={unavailable ? {} : { scale: 1.08 }}
-            onClick={() => !unavailable && onUse(pu.type)}
-            disabled={unavailable}
-            aria-label={`Power-up ${pu.type} (${pu.count} restants)`}
-            className="relative flex flex-col items-center gap-1 focus:outline-none disabled:opacity-50"
+            whileTap={off ? {} : { scale: 0.88 }}
+            whileHover={off ? {} : { scale: 1.07, y: -2 }}
+            onClick={() => !off && onUse(pu.type)}
+            disabled={off}
+            aria-label={`${pu.type} (${pu.count})`}
+            style={{
+              position: 'relative',
+              width: 54, height: 54,
+              borderRadius: '50%',
+              background: `radial-gradient(circle at 38% 32%, ${c.from}, ${c.to})`,
+              boxShadow: off
+                ? `0 3px 0 ${c.shadow}`
+                : `0 5px 0 ${c.shadow}, inset 0 1px 0 rgba(255,255,255,0.28)`,
+              border: '2px solid rgba(255,255,255,0.18)',
+              cursor: off ? 'not-allowed' : 'pointer',
+              opacity: off ? 0.55 : 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 22,
+            }}
           >
-            <div
-              className="relative w-14 h-14 rounded-full flex items-center justify-center text-2xl"
-              style={{
-                background: `radial-gradient(circle at 40% 35%, ${c.bg}ee, ${c.shadow})`,
-                boxShadow: `0 5px 0 ${c.shadow}, inset 0 1px 0 rgba(255,255,255,0.25)`,
-                border: `2.5px solid rgba(255,255,255,0.2)`,
-              }}
-            >
-              {/* Reflet */}
-              <div
-                className="absolute top-2 left-3 right-3 h-1.5 rounded-full opacity-40"
-                style={{ background: 'rgba(255,255,255,0.9)' }}
-              />
-              <span role="img" aria-hidden>{pu.icon}</span>
-            </div>
-
+            {/* Reflet */}
+            <div style={{
+              position: 'absolute', top: 6, left: 10, right: 10, height: 6,
+              borderRadius: 999, background: 'rgba(255,255,255,0.4)',
+            }} />
+            <span role="img" aria-hidden style={{ userSelect: 'none' }}>{pu.icon}</span>
             {/* Badge compteur */}
-            <div
-              className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white"
-              style={{ background: '#1E1B4B', border: '1.5px solid #fff' }}
-            >
+            <div style={{
+              position: 'absolute', bottom: -2, right: -2,
+              minWidth: 18, height: 18, borderRadius: 999,
+              background: '#1E1B4B',
+              border: '1.5px solid #fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 10, fontWeight: 800, color: 'white',
+              padding: '0 3px',
+            }}>
               {pu.count}
             </div>
           </motion.button>
         )
       })}
+
+      {/* Bouton settings */}
+      <motion.button
+        whileTap={{ scale: 0.88 }}
+        whileHover={{ scale: 1.07, y: -2 }}
+        onClick={onSettings}
+        aria-label="Paramètres"
+        style={{
+          width: 54, height: 54,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle at 38% 32%, #3B82F6, #1D4ED8)',
+          boxShadow: '0 5px 0 #1E3A8A, inset 0 1px 0 rgba(255,255,255,0.25)',
+          border: '2px solid rgba(255,255,255,0.18)',
+          cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 22,
+          position: 'relative',
+        }}
+      >
+        <div style={{
+          position: 'absolute', top: 6, left: 10, right: 10, height: 6,
+          borderRadius: 999, background: 'rgba(255,255,255,0.35)',
+        }} />
+        ⚙️
+      </motion.button>
     </div>
   )
 }
